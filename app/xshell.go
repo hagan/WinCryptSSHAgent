@@ -163,10 +163,26 @@ func (s *xshellProxy) Read(p []byte) (n int, err error) {
 	}
 	// sign
 	if s.buf[4] == agentSignRequest {
+		data := s.buf[4:]
+
+		// 计算实际长度，仅保留协议报文标准的数据
+		totalLen := uint32(1)                                // pass sshtype byte
+		totalLen += binary.BigEndian.Uint32(data[totalLen:]) // get KeyBlob data len
+		totalLen += 4                                        // KeyBlob len byte
+		totalLen += binary.BigEndian.Uint32(data[totalLen:]) // get Data data len
+		totalLen += 4                                        // Data len byte
+		totalLen += 4                                        // Flags byte
+
+		// xshell 低版本没有 Flags，直接填充处理
+		out := s.buf[:totalLen+4]
+
 		var req signRequestAgentMsg
-		if err := ssh.Unmarshal(s.buf[4:], &req); err != nil {
-			l += 4
-			s.buf = append(s.buf, []byte{0, 0, 0, 0}...)
+		err := ssh.Unmarshal(out[4:], &req)
+		if err != nil {
+			return 0, err
+		} else {
+			l = totalLen
+			s.buf = out
 		}
 	}
 	binary.BigEndian.PutUint32(s.buf, l)

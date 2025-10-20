@@ -1,0 +1,175 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v1.2.0)'
+        required: true
+        type: string
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            goarch: amd64
+            artifact: WinCryptSSHAgent-windows-amd64
+            binary: WinCryptSSHAgent.exe
+          - arch: 386
+            goarch: "386"
+            artifact: WinCryptSSHAgent-windows-386
+            binary: WinCryptSSHAgent_32bit.exe
+
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Get version info
+        id: version
+        run: |
+          $version = (Get-Content VERSION -ErrorAction SilentlyContinue -Raw).Trim()
+          if (-not $version) { $version = "1.1.9" }
+          $gitHash = git rev-parse --short HEAD 2>$null
+          if (-not $gitHash) { $gitHash = "unknown" }
+
+          Write-Output "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Output "git_hash=$gitHash" >> $env:GITHUB_OUTPUT
+
+      - name: Install goversioninfo
+        run: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+
+      - name: Generate version info
+        run: go generate
+
+      - name: Build ${{ matrix.arch }}
+        env:
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -trimpath -ldflags "-w -s -H=windowsgui -X main.Version=${{ steps.version.outputs.version }} -X main.GitHash=${{ steps.version.outputs.git_hash }}" -o ${{ matrix.binary }}
+
+      - name: Create release archive
+        run: |
+          Compress-Archive -Path ${{ matrix.binary }} -DestinationPath ${{ matrix.artifact }}.zip
+          Get-FileHash ${{ matrix.artifact }}.zip -Algorithm SHA256 | Select-Object -ExpandProperty Hash | Out-File -Encoding ASCII ${{ matrix.artifact }}.zip.sha256
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.zip
+            ${{ matrix.artifact }}.zip.sha256
+
+  release:
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Get version
+        id: version
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ github.event.inputs.tag }}"
+          } else {
+            $version = "${{ github.ref }}" -replace 'refs/tags/', ''
+          }
+          Write-Output "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Prepare release assets
+        run: |
+          # Move all artifacts to root
+          Get-ChildItem -Path artifacts -Recurse -File | ForEach-Object {
+            Move-Item $_.FullName -Destination . -Force
+          }
+
+          # List files
+          Get-ChildItem *.zip, *.sha256
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: WinCryptSSHAgent ${{ steps.version.outputs.version }}
+          files: |
+            *.zip
+            *.sha256
+          body: |
+            ## WinCryptSSHAgent ${{ steps.version.outputs.version }}
+
+            A SSH Agent based on Windows CryptoAPI for use with smart cards (Yubikey PIV, etc).
+
+            ### Downloads
+
+            - **Windows 64-bit**: `WinCryptSSHAgent-windows-amd64.zip`
+            - **Windows 32-bit**: `WinCryptSSHAgent-windows-386.zip`
+
+            ### Installation
+
+            1. Download the appropriate ZIP file for your system
+            2. Extract the executable
+            3. Run `WinCryptSSHAgent.exe` (or `WinCryptSSHAgent_32bit.exe`)
+            4. (Optional) Add to Windows startup folder for automatic start
+
+            ### Features
+
+            - Native Windows smart card support (PIV)
+            - OpenSSH certificate support
+            - Multiple protocol compatibility:
+              - Cygwin UNIX Socket
+              - Windows UNIX Socket (Windows 10 1803+)
+              - Named Pipe
+              - Pageant Protocol
+              - XShell Xagent Protocol
+
+            ### Compatible Clients
+
+            - Git for Windows
+            - Windows Subsystem for Linux (WSL)
+            - Windows OpenSSH
+            - PuTTY
+            - JetBrains IDEs
+            - SecureCRT
+            - XShell
+            - Cygwin/MINGW
+
+            ### Verification
+
+            SHA256 checksums are provided for each binary:
+            ```powershell
+            # PowerShell verification
+            $hash = (Get-FileHash WinCryptSSHAgent-windows-amd64.zip -Algorithm SHA256).Hash
+            $expected = Get-Content WinCryptSSHAgent-windows-amd64.zip.sha256
+            if ($hash -eq $expected.Trim()) { "✅ Checksum verified" } else { "❌ Checksum mismatch" }
+            ```
+
+            ### Documentation
+
+            - [WSL Tutorial](doc/wsl_tutorial.md)
+            - [VS Code Tutorial](doc/vscode_tutorial.md)
+
+            ### Changelog
+
+            See commit history for changes in this release.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

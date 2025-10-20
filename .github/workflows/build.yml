@@ -1,0 +1,174 @@
+name: Build
+
+on:
+  push:
+    branches: [ master, fork, integrate/* ]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/build.yml'
+      - 'Makefile'
+  pull_request:
+    branches: [ master, fork ]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/build.yml'
+
+jobs:
+  lint:
+    name: Format and Lint
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Check formatting
+        id: fmt
+        run: |
+          $files = go fmt ./...
+          if ($files) {
+            Write-Output "❌ Formatting issues found" >> $env:GITHUB_STEP_SUMMARY
+            Write-Output "" >> $env:GITHUB_STEP_SUMMARY
+            Write-Output "### Files needing formatting:" >> $env:GITHUB_STEP_SUMMARY
+            Write-Output '```' >> $env:GITHUB_STEP_SUMMARY
+            Write-Output "$files" >> $env:GITHUB_STEP_SUMMARY
+            Write-Output '```' >> $env:GITHUB_STEP_SUMMARY
+            Write-Output "" >> $env:GITHUB_STEP_SUMMARY
+            Write-Output "### How to fix:" >> $env:GITHUB_STEP_SUMMARY
+            Write-Output '```bash' >> $env:GITHUB_STEP_SUMMARY
+            Write-Output "go fmt ./..." >> $env:GITHUB_STEP_SUMMARY
+            Write-Output '```' >> $env:GITHUB_STEP_SUMMARY
+            Write-Error "Formatting check failed. Run: go fmt ./..."
+            exit 1
+          }
+          Write-Output "✅ Formatting OK" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Run go vet
+        id: vet
+        run: |
+          go vet ./...
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output "✅ Go vet passed" >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            Write-Output "❌ Go vet failed" >> $env:GITHUB_STEP_SUMMARY
+            exit 1
+          }
+
+  build:
+    needs: lint
+    name: Build ${{ matrix.arch }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            goarch: amd64
+            artifact: WinCryptSSHAgent-windows-amd64
+            binary: WinCryptSSHAgent.exe
+          - arch: 386
+            goarch: "386"
+            artifact: WinCryptSSHAgent-windows-386
+            binary: WinCryptSSHAgent_32bit.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Get version info
+        id: version
+        run: |
+          $version = (Get-Content VERSION -ErrorAction SilentlyContinue -Raw).Trim()
+          if (-not $version) { $version = "1.1.9" }
+          $gitHash = git rev-parse --short HEAD 2>$null
+          if (-not $gitHash) { $gitHash = "unknown" }
+          $gitDirty = git status --porcelain 2>$null
+          $dirty = if ($gitDirty) { "-dirty" } else { "" }
+
+          Write-Output "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Output "git_hash=$gitHash" >> $env:GITHUB_OUTPUT
+          Write-Output "git_dirty=$dirty" >> $env:GITHUB_OUTPUT
+
+          Write-Output "## Build Info" >> $env:GITHUB_STEP_SUMMARY
+          Write-Output "- Version: v$version" >> $env:GITHUB_STEP_SUMMARY
+          Write-Output "- Git Hash: $gitHash$dirty" >> $env:GITHUB_STEP_SUMMARY
+          Write-Output "- Architecture: ${{ matrix.arch }}" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Install goversioninfo
+        run: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+
+      - name: Generate version info
+        run: go generate
+
+      - name: Build ${{ matrix.arch }}
+        env:
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -trimpath -ldflags "-w -s -H=windowsgui -X main.Version=${{ steps.version.outputs.version }} -X main.GitHash=${{ steps.version.outputs.git_hash }}" -o ${{ matrix.binary }}
+
+      - name: Verify binary
+        run: |
+          if (Test-Path ${{ matrix.binary }}) {
+            $size = (Get-Item ${{ matrix.binary }}).Length
+            $sizeMB = [math]::Round($size / 1MB, 2)
+            Write-Output "✅ Binary built successfully" >> $env:GITHUB_STEP_SUMMARY
+            Write-Output "- File: ${{ matrix.binary }}" >> $env:GITHUB_STEP_SUMMARY
+            Write-Output "- Size: $sizeMB MB ($size bytes)" >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            Write-Error "Binary not found: ${{ matrix.binary }}"
+            exit 1
+          }
+
+      - name: Create archive
+        run: |
+          Compress-Archive -Path ${{ matrix.binary }} -DestinationPath ${{ matrix.artifact }}.zip
+          Get-FileHash ${{ matrix.artifact }}.zip -Algorithm SHA256 | Select-Object -ExpandProperty Hash | Out-File -Encoding ASCII ${{ matrix.artifact }}.zip.sha256
+
+          $zipSize = (Get-Item ${{ matrix.artifact }}.zip).Length
+          $zipSizeMB = [math]::Round($zipSize / 1MB, 2)
+          Write-Output "📦 Archive created: ${{ matrix.artifact }}.zip ($zipSizeMB MB)" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.zip
+            ${{ matrix.artifact }}.zip.sha256
+
+  # Summary job
+  build-summary:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate summary
+        run: |
+          Write-Output "## Build Artifacts Summary" >> $env:GITHUB_STEP_SUMMARY
+          Write-Output "" >> $env:GITHUB_STEP_SUMMARY
+          Write-Output "| Platform | Package | SHA256 |" >> $env:GITHUB_STEP_SUMMARY
+          Write-Output "|----------|---------|--------|" >> $env:GITHUB_STEP_SUMMARY
+
+          Get-ChildItem -Path artifacts -Recurse -Filter "*.zip" | ForEach-Object {
+            $size = [math]::Round($_.Length / 1MB, 2)
+            $name = $_.BaseName
+            Write-Output "| $name | $size MB | ✅ |" >> $env:GITHUB_STEP_SUMMARY
+          }
+
+          Write-Output "" >> $env:GITHUB_STEP_SUMMARY
+          Write-Output "✅ All builds completed successfully!" >> $env:GITHUB_STEP_SUMMARY

@@ -1,6 +1,16 @@
 # WinCrypt SSH Agent
 
-![CI](https://github.com/buptczq/WinCryptSSHAgent/workflows/Go/badge.svg)
+[![CI](https://github.com/hagan/WinCryptSSHAgent/workflows/Go/badge.svg)](https://github.com/hagan/WinCryptSSHAgent/actions)
+[![Release](https://img.shields.io/github/v/release/hagan/WinCryptSSHAgent)](https://github.com/hagan/WinCryptSSHAgent/releases)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
+> **This is an actively maintained fork** of [buptczq/WinCryptSSHAgent](https://github.com/buptczq/WinCryptSSHAgent).
+> The upstream project has limited maintenance activity. This fork includes security fixes,
+> bug fixes, and improvements from the community.
+>
+> **Branch Structure:**
+> - `master` - Tracks upstream for contributing back
+> - `main` - Active development with security fixes and improvements
 
 ## Introduction
 
@@ -52,9 +62,23 @@ choco install wincrypt-sshagent
 
 ### Manually Install
 
-Stable versions can be obtained from the release page. 
+**For this fork:** Download from the [releases page](https://github.com/hagan/WinCryptSSHAgent/releases).
 
-Additionally, you may make an shortcut of this application to the startup folder.
+**For upstream:** See [buptczq releases](https://github.com/buptczq/WinCryptSSHAgent/releases).
+
+Additionally, you may make a shortcut of this application to the startup folder.
+
+### Building from Source
+
+Requirements:
+- Go 1.23+
+- Git
+
+```bash
+git clone https://github.com/hagan/WinCryptSSHAgent.git
+cd WinCryptSSHAgent
+go build -ldflags "-H windowsgui" -o WinCryptSSHAgent.exe .
+```
 
 ## Usage
 
@@ -92,13 +116,43 @@ If you want to work with OpenSSH certificates, you should put your OpenSSH Certi
 3. Reproduce your problem
 4. The debug log is located in `%USERPROFILE%\WCSA_DEBUG.log`
 
-### Contribute
+## Fork Improvements
+
+This fork includes the following improvements over upstream:
+
+### Merged from Community
+- XShell 7/8 compatibility improvements (from zzmark, tantra35)
+- SSH certificate handling fixes
+- Pageant window foreground behavior
+- Build system improvements
+
+### Planned Security Fixes
+- [ ] Secure PIN cache memory handling
+- [ ] Buffer overflow protection in Pageant protocol
+- [ ] Secure random number generation
+- [ ] XShell message bounds checking
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
+
+## Contributing
 
 **Please use issues for everything**
 
 - For a small change, just send a PR.
 - For bigger changes open an issue for discussion before sending a PR.
+- PRs that can be contributed back to upstream should target the `master` branch.
+- PRs for fork-specific improvements should target the `main` branch.
 - You can also contribute by:
   - Reporting issues
   - Suggesting new features or enhancements
   - Improve/fix documentation
+
+## Acknowledgments
+
+- Original project by [BUPTCZQ](https://github.com/buptczq)
+- XShell improvements by [zzmark](https://github.com/zzmark) and [tantra35](https://github.com/tantra35)
+- All contributors to the upstream project
+
+## License
+
+Apache License 2.0 - See [LICENSE](LICENSE) for details.

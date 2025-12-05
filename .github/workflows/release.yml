@@ -20,6 +20,10 @@ jobs:
             goarch: amd64
             artifact: WinCryptSSHAgent-windows-amd64
             binary: WinCryptSSHAgent.exe
+          - arch: arm64
+            goarch: arm64
+            artifact: WinCryptSSHAgent-windows-arm64
+            binary: WinCryptSSHAgent_arm64.exe
           - arch: 386
             goarch: "386"
             artifact: WinCryptSSHAgent-windows-386
@@ -119,8 +123,9 @@ jobs:
 
             ### Downloads
 
-            - **Windows 64-bit**: `WinCryptSSHAgent-windows-amd64.zip`
-            - **Windows 32-bit**: `WinCryptSSHAgent-windows-386.zip`
+            - **Windows 64-bit (x64)**: `WinCryptSSHAgent-windows-amd64.zip`
+            - **Windows ARM64**: `WinCryptSSHAgent-windows-arm64.zip`
+            - **Windows 32-bit (x86)**: `WinCryptSSHAgent-windows-386.zip`
 
             ### Installation
 
@@ -168,7 +173,12 @@ jobs:
 
             ### Changelog
 
-            See commit history for changes in this release.
+            See [CHANGELOG.md](https://github.com/hagan/WinCryptSSHAgent/blob/main/CHANGELOG.md) for details.
+
+            ---
+
+            > **Note:** This is a release from the [actively maintained fork](https://github.com/hagan/WinCryptSSHAgent).
+            > For upstream releases, see [buptczq/WinCryptSSHAgent](https://github.com/buptczq/WinCryptSSHAgent/releases).
           draft: false
           prerelease: false
         env:
